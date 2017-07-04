@@ -60,6 +60,7 @@ class Camera1 extends CameraViewImpl {
     private final SizeMap mPictureSizes = new SizeMap();
 
     private AspectRatio mAspectRatio;
+    private AspectRatio mExceptAspectRatio;
 
     private boolean mShowingPreview;
 
@@ -236,13 +237,43 @@ class Camera1 extends CameraViewImpl {
         }
     }
 
+    @Override
+    void setExceptPictureSize(int longer, int shorter) {
+
+    }
+
+    @Override
+    void takePreviewFrame() {
+        // TODO isPictureCaptureInProgress ?
+        mCamera.setOneShotPreviewCallback(new Camera.PreviewCallback() {
+            @Override
+            public void onPreviewFrame(byte[] data, Camera camera) {
+                Camera.Size size = mCameraParameters.getPreviewSize();
+                mCallback.onPictureTaken(data, new Size(size.width, size.height));
+            }
+        });
+    }
+
+    @Override
+    void setExceptAspectRatio(AspectRatio ratio) {
+        if (ratio != null && ratio.equals(this.mExceptAspectRatio)) {
+            return;
+        }
+        this.mExceptAspectRatio = ratio;
+        if (!isCameraOpened()) {
+            return;
+        }
+        setAspectRatio(chooseOptimalAspectRatio(ratio));
+    }
+
     void takePictureInternal() {
         if (!isPictureCaptureInProgress.getAndSet(true)) {
             mCamera.takePicture(null, null, null, new Camera.PictureCallback() {
                 @Override
                 public void onPictureTaken(byte[] data, Camera camera) {
                     isPictureCaptureInProgress.set(false);
-                    mCallback.onPictureTaken(data);
+                    Camera.Size size = mCameraParameters.getPreviewSize();
+                    mCallback.onPictureTaken(data, new Size(size.width, size.height));
                     camera.cancelAutoFocus();
                     camera.startPreview();
                 }
@@ -301,6 +332,9 @@ class Camera1 extends CameraViewImpl {
             mPictureSizes.add(new Size(size.width, size.height));
         }
         // AspectRatio
+        if (mExceptAspectRatio != null) {
+            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio);
+        }
         if (mAspectRatio == null) {
             mAspectRatio = Constants.DEFAULT_ASPECT_RATIO;
         }

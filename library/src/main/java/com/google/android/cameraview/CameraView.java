@@ -407,6 +407,18 @@ public class CameraView extends FrameLayout {
         mImpl.takePicture();
     }
 
+    public void setExceptPictureSize(int longer, int shorter) {
+        mImpl.setExceptPictureSize(longer, shorter);
+    }
+
+    public void takePreviewFrame() {
+        mImpl.takePreviewFrame();
+    }
+
+    public void setExceptAspectRatio(AspectRatio ratio) {
+        mImpl.setExceptAspectRatio(ratio);
+    }
+
     private class CallbackBridge implements CameraViewImpl.Callback {
 
         private final ArrayList<Callback> mCallbacks = new ArrayList<>();
@@ -443,9 +455,9 @@ public class CameraView extends FrameLayout {
         }
 
         @Override
-        public void onPictureTaken(byte[] data) {
+        public void onPictureTaken(byte[] data, Size size) {
             for (Callback callback : mCallbacks) {
-                callback.onPictureTaken(CameraView.this, data);
+                callback.onPictureTaken(CameraView.this, data, size);
             }
         }
 
@@ -534,6 +546,10 @@ public class CameraView extends FrameLayout {
          * @param data       JPEG data.
          */
         public void onPictureTaken(CameraView cameraView, byte[] data) {
+        }
+
+        public void onPictureTaken(CameraView cameraView, byte[] data, Size size) {
+            onPictureTaken(cameraView, data);
         }
     }
 

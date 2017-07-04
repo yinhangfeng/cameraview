@@ -67,7 +67,35 @@ abstract class CameraViewImpl {
 
     abstract void takePicture();
 
+    abstract void setExceptPictureSize(int longer, int shorter);
+
+    abstract void takePreviewFrame();
+
+    /**
+     * 优先级高于setAspectRatio
+     * 如果使用此方法设置 则不应该再调用setAspectRatio
+     */
+    abstract void setExceptAspectRatio(AspectRatio ratio);
+
     abstract void setDisplayOrientation(int displayOrientation);
+
+    protected AspectRatio chooseOptimalAspectRatio(AspectRatio exceptAspectRatio) {
+        if (exceptAspectRatio == null) {
+            return null;
+        }
+        Set<AspectRatio> ratios = getSupportedAspectRatios();
+        float exceptAspectRatioF = exceptAspectRatio.toFloat();
+        float minDiff = Float.MAX_VALUE;
+        AspectRatio retRatio = null;
+        for (AspectRatio ratio : ratios) {
+            float diff = Math.abs(ratio.toFloat() - exceptAspectRatioF);
+            if (diff < minDiff) {
+                minDiff = diff;
+                retRatio = ratio;
+            }
+        }
+        return retRatio;
+    }
 
     interface Callback {
 
@@ -75,7 +103,7 @@ abstract class CameraViewImpl {
 
         void onCameraClosed();
 
-        void onPictureTaken(byte[] data);
+        void onPictureTaken(byte[] data, Size size);
 
     }
 

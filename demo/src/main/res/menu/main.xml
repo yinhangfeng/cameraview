@@ -33,4 +33,10 @@
         android:title="@string/switch_camera"
         app:showAsAction="ifRoom"/>
 
+    <item
+        android:id="@+id/take_preview_frame"
+        android:icon="@drawable/ic_switch_camera"
+        android:title="take_preview_frame"
+        app:showAsAction="ifRoom"/>
+
 </menu>

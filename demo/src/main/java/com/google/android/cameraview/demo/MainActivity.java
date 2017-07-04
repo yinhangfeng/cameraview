@@ -20,11 +20,17 @@ import android.Manifest;
 import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.StringRes;
 import android.support.design.widget.FloatingActionButton;
@@ -36,15 +42,19 @@ import android.support.v7.app.ActionBar;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import com.google.android.cameraview.AspectRatio;
 import com.google.android.cameraview.CameraView;
+import com.google.android.cameraview.Size;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -58,7 +68,7 @@ import java.util.Set;
  */
 public class MainActivity extends AppCompatActivity implements
         ActivityCompat.OnRequestPermissionsResultCallback,
-        AspectRatioFragment.Listener {
+        AspectRatioFragment.Listener, View.OnClickListener {
 
     private static final String TAG = "MainActivity";
 
@@ -90,12 +100,19 @@ public class MainActivity extends AppCompatActivity implements
 
     private Handler mBackgroundHandler;
 
+    private long mTakePreviewFrameStartTime;
+
+    private ImageView mPreviewFrameView;
+
+    private boolean isPreviewFrame;
+
     private View.OnClickListener mOnClickListener = new View.OnClickListener() {
         @Override
         public void onClick(View v) {
             switch (v.getId()) {
                 case R.id.take_picture:
                     if (mCameraView != null) {
+                        isPreviewFrame = false;
                         mCameraView.takePicture();
                     }
                     break;
@@ -107,10 +124,7 @@ public class MainActivity extends AppCompatActivity implements
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        mCameraView = (CameraView) findViewById(R.id.camera);
-        if (mCameraView != null) {
-            mCameraView.addCallback(mCallback);
-        }
+        initCameraView();
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.take_picture);
         if (fab != null) {
             fab.setOnClickListener(mOnClickListener);
@@ -121,6 +135,26 @@ public class MainActivity extends AppCompatActivity implements
         if (actionBar != null) {
             actionBar.setDisplayShowTitleEnabled(false);
         }
+
+        mPreviewFrameView = (ImageView) findViewById(R.id.preview_frame);
+        mPreviewFrameView.setOnClickListener(this);
+    }
+
+    private void initCameraView() {
+        mCameraView = (CameraView) findViewById(R.id.camera);
+        mCameraView.addCallback(mCallback);
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int longer;
+        int shorter;
+        if (dm.heightPixels > dm.widthPixels) {
+            longer = dm.heightPixels;
+            shorter = dm.widthPixels;
+        } else {
+            longer = dm.widthPixels;
+            shorter = dm.heightPixels;
+        }
+        mCameraView.setExceptAspectRatio(AspectRatio.of(longer, shorter));
+        mCameraView.setExceptPictureSize(longer, shorter);
     }
 
     @Override
@@ -213,6 +247,13 @@ public class MainActivity extends AppCompatActivity implements
                             CameraView.FACING_BACK : CameraView.FACING_FRONT);
                 }
                 return true;
+            case R.id.take_preview_frame:
+                if (mCameraView != null) {
+                    mTakePreviewFrameStartTime = SystemClock.currentThreadTimeMillis();
+                    isPreviewFrame = true;
+                    mCameraView.takePreviewFrame();
+                }
+                return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -248,36 +289,54 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         @Override
-        public void onPictureTaken(CameraView cameraView, final byte[] data) {
-            Log.d(TAG, "onPictureTaken " + data.length);
-            Toast.makeText(cameraView.getContext(), R.string.picture_taken, Toast.LENGTH_SHORT)
-                    .show();
-            getBackgroundHandler().post(new Runnable() {
-                @Override
-                public void run() {
-                    File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-                            "picture.jpg");
-                    OutputStream os = null;
-                    try {
-                        os = new FileOutputStream(file);
-                        os.write(data);
-                        os.close();
-                    } catch (IOException e) {
-                        Log.w(TAG, "Cannot write to " + file, e);
-                    } finally {
-                        if (os != null) {
-                            try {
-                                os.close();
-                            } catch (IOException e) {
-                                // Ignore
+        public void onPictureTaken(CameraView cameraView, final byte[] data, Size size) {
+            Log.d(TAG, "onPictureTaken " + data.length + " size:" + size + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
+            if (isPreviewFrame) {
+                //            YuvImage yuv = new YuvImage(data, ImageFormat.JPEG, frameSize.getWidth(), frameSize.getHeight(), null);
+//            ByteArrayOutputStream out = new ByteArrayOutputStream();
+//            yuv.compressToJpeg(new Rect(0, 0, yuv.getWidth(), yuv.getHeight()), 100, out);
+
+                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, null);
+                mPreviewFrameView.setImageBitmap(bitmap);
+                mPreviewFrameView.setVisibility(View.VISIBLE);
+            } else {
+                Toast.makeText(cameraView.getContext(), R.string.picture_taken, Toast.LENGTH_SHORT)
+                        .show();
+                getBackgroundHandler().post(new Runnable() {
+                    @Override
+                    public void run() {
+                        File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                                "picture.jpg");
+                        OutputStream os = null;
+                        try {
+                            os = new FileOutputStream(file);
+                            os.write(data);
+                            os.close();
+                        } catch (IOException e) {
+                            Log.w(TAG, "Cannot write to " + file, e);
+                        } finally {
+                            if (os != null) {
+                                try {
+                                    os.close();
+                                } catch (IOException e) {
+                                    // Ignore
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            }
         }
-
     };
+
+    @Override
+    public void onClick(View v) {
+        switch (v.getId()) {
+            case R.id.preview_frame:
+                mPreviewFrameView.setVisibility(View.GONE);
+                break;
+        }
+    }
 
     public static class ConfirmationDialogFragment extends DialogFragment {
 

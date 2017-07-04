@@ -162,7 +162,7 @@ class Camera2 extends CameraViewImpl {
                     ByteBuffer buffer = planes[0].getBuffer();
                     byte[] data = new byte[buffer.remaining()];
                     buffer.get(data);
-                    mCallback.onPictureTaken(data);
+                    mCallback.onPictureTaken(data, new Size(image.getWidth(), image.getHeight()));
                 }
             }
         }
@@ -189,12 +189,17 @@ class Camera2 extends CameraViewImpl {
     private int mFacing;
 
     private AspectRatio mAspectRatio = Constants.DEFAULT_ASPECT_RATIO;
+    private AspectRatio mExceptAspectRatio;
 
     private boolean mAutoFocus;
 
     private int mFlash;
 
     private int mDisplayOrientation;
+
+    private boolean mStarted;
+
+    private Size exceptPictureSize;
 
     Camera2(Callback callback, PreviewImpl preview, Context context) {
         super(callback, preview);
@@ -215,6 +220,7 @@ class Camera2 extends CameraViewImpl {
         collectCameraInfo();
         prepareImageReader();
         startOpeningCamera();
+        mStarted = true;
         return true;
     }
 
@@ -232,6 +238,7 @@ class Camera2 extends CameraViewImpl {
             mImageReader.close();
             mImageReader = null;
         }
+        mStarted = false;
     }
 
     @Override
@@ -269,7 +276,9 @@ class Camera2 extends CameraViewImpl {
             return false;
         }
         mAspectRatio = ratio;
-        prepareImageReader();
+        if (mImageReader != null) {
+            prepareImageReader();
+        }
         if (mCaptureSession != null) {
             mCaptureSession.close();
             mCaptureSession = null;
@@ -339,6 +348,62 @@ class Camera2 extends CameraViewImpl {
         } else {
             captureStillPicture();
         }
+    }
+
+    @Override
+    void setExceptPictureSize(int longer, int shorter) {
+        Size size = new Size(longer, shorter);
+        if (size.equals(exceptPictureSize)) {
+            return;
+        }
+        exceptPictureSize = size;
+        if (mImageReader != null) {
+            prepareImageReader();
+        }
+        if (mCaptureSession != null) {
+            mCaptureSession.close();
+            mCaptureSession = null;
+            startCaptureSession();
+        }
+    }
+
+    @Override
+    void takePreviewFrame() {
+//        captureStillPicture();
+
+        try {
+            CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(
+                    CameraDevice.TEMPLATE_PREVIEW);
+            captureRequestBuilder.addTarget(mImageReader.getSurface());
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                    mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
+
+            // Calculate JPEG orientation.
+//            @SuppressWarnings("ConstantConditions")
+//            int sensorOrientation = mCameraCharacteristics.get(
+//                    CameraCharacteristics.SENSOR_ORIENTATION);
+//            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION,
+//                    (sensorOrientation +
+//                            mDisplayOrientation * (mFacing == Constants.FACING_FRONT ? 1 : -1) +
+//                            360) % 360);
+
+            mCaptureSession.capture(captureRequestBuilder.build(), null, null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    @Override
+    void setExceptAspectRatio(AspectRatio ratio) {
+        if (ratio != null && ratio.equals(this.mExceptAspectRatio)) {
+            return;
+        }
+        this.mExceptAspectRatio = ratio;
+        if (!mStarted) {
+            return;
+        }
+        setAspectRatio(chooseOptimalAspectRatio(ratio));
     }
 
     @Override
@@ -432,6 +497,9 @@ class Camera2 extends CameraViewImpl {
             }
         }
 
+        if (mExceptAspectRatio != null) {
+            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio);
+        }
         if (!mPreviewSizes.ratios().contains(mAspectRatio)) {
             mAspectRatio = mPreviewSizes.ratios().iterator().next();
         }
@@ -447,8 +515,13 @@ class Camera2 extends CameraViewImpl {
         if (mImageReader != null) {
             mImageReader.close();
         }
-        Size largest = mPictureSizes.sizes(mAspectRatio).last();
-        mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
+        Size size;
+        if (exceptPictureSize != null) {
+            size = chooseOptimalSizeInner(exceptPictureSize.getWidth(), exceptPictureSize.getHeight());
+        } else {
+            size = mPictureSizes.sizes(mAspectRatio).last();
+        }
+        mImageReader = ImageReader.newInstance(size.getWidth(), size.getHeight(),
                 ImageFormat.JPEG, /* maxImages */ 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
     }
@@ -493,9 +566,11 @@ class Camera2 extends CameraViewImpl {
      * @return The picked size for camera preview.
      */
     private Size chooseOptimalSize() {
+        return chooseOptimalSizeInner(mPreview.getWidth(), mPreview.getHeight());
+    }
+
+    private Size chooseOptimalSizeInner(int surfaceWidth, int surfaceHeight) {
         int surfaceLonger, surfaceShorter;
-        final int surfaceWidth = mPreview.getWidth();
-        final int surfaceHeight = mPreview.getHeight();
         if (surfaceWidth < surfaceHeight) {
             surfaceLonger = surfaceHeight;
             surfaceShorter = surfaceWidth;
