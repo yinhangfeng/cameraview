@@ -65,6 +65,11 @@ public class CameraView extends FrameLayout {
     /** Flash will be fired in red-eye reduction mode. */
     public static final int FLASH_RED_EYE = Constants.FLASH_RED_EYE;
 
+    /**
+     * 强制使用Camera1
+     */
+    public static boolean forceCamera1;
+
     /** The mode for for the camera device's flash control */
     @IntDef({FLASH_OFF, FLASH_ON, FLASH_TORCH, FLASH_AUTO, FLASH_RED_EYE})
     public @interface Flash {
@@ -97,7 +102,7 @@ public class CameraView extends FrameLayout {
         // Internal setup
         final PreviewImpl preview = createPreviewImpl(context);
         mCallbacks = new CallbackBridge();
-        if (Build.VERSION.SDK_INT < 21) {
+        if (forceCamera1 || Build.VERSION.SDK_INT < 21) {
             mImpl = new Camera1(mCallbacks, preview);
         } else if (Build.VERSION.SDK_INT < 23) {
             mImpl = new Camera2(mCallbacks, preview, context);

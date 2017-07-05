@@ -73,7 +73,6 @@ class Camera2 extends CameraViewImpl {
         @Override
         public void onOpened(@NonNull CameraDevice camera) {
             mCamera = camera;
-            mCallback.onCameraOpened();
             startCaptureSession();
         }
 
@@ -106,6 +105,7 @@ class Camera2 extends CameraViewImpl {
             mCaptureSession = session;
             updateAutoFocus();
             updateFlash();
+            mCallback.onCameraOpened();
             try {
                 mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
                         mCaptureCallback, null);
@@ -380,8 +380,8 @@ class Camera2 extends CameraViewImpl {
             CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(
                     CameraDevice.TEMPLATE_PREVIEW);
             captureRequestBuilder.addTarget(mImageReader.getSurface());
-            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
+//            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+//                    mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
 
             // Calculate JPEG orientation.
 //            @SuppressWarnings("ConstantConditions")
@@ -748,6 +748,7 @@ class Camera2 extends CameraViewImpl {
      * capturing a still picture.
      */
     void unlockFocus() {
+        if (!isCameraOpened()) return;
         mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
                 CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
         try {

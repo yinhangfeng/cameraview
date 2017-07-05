@@ -281,6 +281,7 @@ class Camera1 extends CameraViewImpl {
                     isPictureCaptureInProgress.set(false);
                     Camera.Size size = mCameraParameters.getPictureSize();
                     mCallback.onPictureTaken(new ImageData(data, size.width, size.height, ImageFormat.JPEG));
+                    if (!isCameraOpened()) return;
                     camera.cancelAutoFocus();
                     camera.startPreview();
                 }

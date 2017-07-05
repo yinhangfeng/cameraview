@@ -112,7 +112,7 @@ public class MainActivity extends AppCompatActivity implements
                 case R.id.take_picture:
                     if (mCameraView != null) {
                         isPreviewFrame = false;
-                        mTakePreviewFrameStartTime = SystemClock.currentThreadTimeMillis();
+                        mTakePreviewFrameStartTime = SystemClock.elapsedRealtime();
                         mCameraView.takePicture();
                     }
                     break;
@@ -253,7 +253,7 @@ public class MainActivity extends AppCompatActivity implements
                 return true;
             case R.id.take_preview_frame:
                 if (mCameraView != null) {
-                    mTakePreviewFrameStartTime = SystemClock.currentThreadTimeMillis();
+                    mTakePreviewFrameStartTime = SystemClock.elapsedRealtime();
                     isPreviewFrame = true;
                     mCameraView.takePreviewFrame();
                 }
@@ -322,7 +322,7 @@ public class MainActivity extends AppCompatActivity implements
 
         @Override
         public void onPictureTaken(CameraView cameraView, final byte[] data, Size size, int format) {
-            Log.i(TAG, "onPictureTaken " + (data == null ? 0 : data.length) + " size:" + size + " format:" + format + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
+            Log.i(TAG, "onPictureTaken " + (data == null ? 0 : data.length) + " size:" + size + " format:" + format + " time:" + (SystemClock.elapsedRealtime() - mTakePreviewFrameStartTime));
             Toast.makeText(cameraView.getContext(), R.string.picture_taken, Toast.LENGTH_SHORT)
                     .show();
 
@@ -353,10 +353,10 @@ public class MainActivity extends AppCompatActivity implements
 
         @Override
         public void onPreviewFrame(CameraView cameraView, ImageData imageData) {
-            Log.i(TAG, "onPreviewFrame: width:" + imageData.getWidth() + " height:" + imageData.getHeight() + " format:" + imageData.getFormat() + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
-            long getNV21StartTime = SystemClock.currentThreadTimeMillis();
+            Log.i(TAG, "onPreviewFrame: width:" + imageData.getWidth() + " height:" + imageData.getHeight() + " format:" + imageData.getFormat() + " time:" + (SystemClock.elapsedRealtime() - mTakePreviewFrameStartTime));
+            long getNV21StartTime = SystemClock.elapsedRealtime();
             byte[] data = imageData.getNV21();
-            Log.i(TAG, "onPreviewFrame: getNV21 time:" + (SystemClock.currentThreadTimeMillis() - getNV21StartTime));
+            Log.i(TAG, "onPreviewFrame: getNV21 time:" + (SystemClock.elapsedRealtime() - getNV21StartTime));
 
             YuvImage yuv = new YuvImage(data, ImageFormat.NV21, imageData.getWidth(), imageData.getHeight(), null);
             imageData.close();
