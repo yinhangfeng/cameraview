@@ -16,6 +16,8 @@
 
 package com.google.android.cameraview;
 
+import android.content.res.Resources;
+import android.util.DisplayMetrics;
 import android.view.View;
 
 import java.util.Set;
@@ -67,7 +69,7 @@ abstract class CameraViewImpl {
 
     abstract void takePicture();
 
-    abstract void setExceptPictureSize(int longer, int shorter);
+    abstract void setExceptPictureConfig(Size size, int format);
 
     abstract void takePreviewFrame();
 
@@ -77,24 +79,59 @@ abstract class CameraViewImpl {
      */
     abstract void setExceptAspectRatio(AspectRatio ratio);
 
+    abstract AspectRatio getExceptAspectRatio();
+
     abstract void setDisplayOrientation(int displayOrientation);
 
-    protected AspectRatio chooseOptimalAspectRatio(AspectRatio exceptAspectRatio) {
+    protected AspectRatio chooseOptimalAspectRatio(AspectRatio exceptAspectRatio, SizeMap sizeMap) {
         if (exceptAspectRatio == null) {
             return null;
+        }
+        DisplayMetrics dm = Resources.getSystem().getDisplayMetrics();
+        int screenLonger = dm.widthPixels;
+        int screenShorter = dm.heightPixels;
+        if (screenLonger < screenShorter) {
+            screenLonger = screenShorter;
+            screenShorter = dm.widthPixels;
         }
         Set<AspectRatio> ratios = getSupportedAspectRatios();
         float exceptAspectRatioF = exceptAspectRatio.toFloat();
         float minDiff = Float.MAX_VALUE;
+        float retDiff = Float.MAX_VALUE;
+        final float MAX_ASPECT_DISTORTION = 0.15f;
         AspectRatio retRatio = null;
+        AspectRatio retRatio1 = null;
+        int sizeLonger;
+        int sizeShorter;
         for (AspectRatio ratio : ratios) {
             float diff = Math.abs(ratio.toFloat() - exceptAspectRatioF);
+            if (diff < MAX_ASPECT_DISTORTION && diff < retDiff) {
+                retRatio1 = ratio;
+                // 优先选择具有比屏幕像素大的比例
+                for (Size size : sizeMap.sizes(ratio)) {
+                    if (size.getWidth() > size.getHeight()) {
+                        sizeLonger = size.getWidth();
+                        sizeShorter = size.getHeight();
+                    } else {
+                        sizeLonger = size.getHeight();
+                        sizeShorter = size.getWidth();
+                    }
+                    if (sizeLonger >= screenLonger && sizeShorter >= screenShorter) {
+                        retDiff = diff;
+                        retRatio = ratio;
+                        break;
+                    }
+                }
+            }
             if (diff < minDiff) {
                 minDiff = diff;
-                retRatio = ratio;
+                retRatio1 = ratio;
             }
         }
-        return retRatio;
+        if (retRatio != null) {
+            return retRatio;
+        }
+        return retRatio1;
     }
 
     interface Callback {
@@ -103,7 +140,9 @@ abstract class CameraViewImpl {
 
         void onCameraClosed();
 
-        void onPictureTaken(byte[] data, Size size);
+        void onPictureTaken(ImageData imageData);
+
+        void onPreviewFrame(ImageData imageData);
 
     }
 

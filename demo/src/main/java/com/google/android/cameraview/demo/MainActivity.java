@@ -17,6 +17,7 @@
 package com.google.android.cameraview.demo;
 
 import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
@@ -25,9 +26,9 @@ import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
+import android.media.Image;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
@@ -52,13 +53,11 @@ import android.widget.Toast;
 
 import com.google.android.cameraview.AspectRatio;
 import com.google.android.cameraview.CameraView;
+import com.google.android.cameraview.ImageData;
 import com.google.android.cameraview.Size;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.Set;
 
 
@@ -113,6 +112,7 @@ public class MainActivity extends AppCompatActivity implements
                 case R.id.take_picture:
                     if (mCameraView != null) {
                         isPreviewFrame = false;
+                        mTakePreviewFrameStartTime = SystemClock.currentThreadTimeMillis();
                         mCameraView.takePicture();
                     }
                     break;
@@ -154,7 +154,11 @@ public class MainActivity extends AppCompatActivity implements
             shorter = dm.heightPixels;
         }
         mCameraView.setExceptAspectRatio(AspectRatio.of(longer, shorter));
-        mCameraView.setExceptPictureSize(longer, shorter);
+        int format = ImageFormat.NV21;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            format = ImageFormat.YUV_420_888;
+        }
+        mCameraView.setExceptPictureConfig(new Size(longer, shorter), format);
     }
 
     @Override
@@ -275,6 +279,34 @@ public class MainActivity extends AppCompatActivity implements
         return mBackgroundHandler;
     }
 
+    @TargetApi(Build.VERSION_CODES.KITKAT)
+    private static byte[] YUV_420_888toNV21(Image image) {
+        byte[] nv21;
+        ByteBuffer yBuffer = image.getPlanes()[0].getBuffer();
+        ByteBuffer uBuffer = image.getPlanes()[1].getBuffer();
+        ByteBuffer vBuffer = image.getPlanes()[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        nv21 = new byte[ySize + uSize + vSize];
+
+        //U and V are swapped
+        yBuffer.get(nv21, 0, ySize);
+        vBuffer.get(nv21, ySize, vSize);
+        uBuffer.get(nv21, ySize + vSize, uSize);
+
+        return nv21;
+    }
+
+    private static byte[] NV21toJPEG(byte[] nv21, int width, int height) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
+        yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
+        return out.toByteArray();
+    }
+
     private CameraView.Callback mCallback
             = new CameraView.Callback() {
 
@@ -289,43 +321,53 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         @Override
-        public void onPictureTaken(CameraView cameraView, final byte[] data, Size size) {
-            Log.d(TAG, "onPictureTaken " + data.length + " size:" + size + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
-            if (isPreviewFrame) {
-                //            YuvImage yuv = new YuvImage(data, ImageFormat.JPEG, frameSize.getWidth(), frameSize.getHeight(), null);
-//            ByteArrayOutputStream out = new ByteArrayOutputStream();
-//            yuv.compressToJpeg(new Rect(0, 0, yuv.getWidth(), yuv.getHeight()), 100, out);
+        public void onPictureTaken(CameraView cameraView, final byte[] data, Size size, int format) {
+            Log.i(TAG, "onPictureTaken " + (data == null ? 0 : data.length) + " size:" + size + " format:" + format + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
+            Toast.makeText(cameraView.getContext(), R.string.picture_taken, Toast.LENGTH_SHORT)
+                    .show();
 
-                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, null);
-                mPreviewFrameView.setImageBitmap(bitmap);
-                mPreviewFrameView.setVisibility(View.VISIBLE);
-            } else {
-                Toast.makeText(cameraView.getContext(), R.string.picture_taken, Toast.LENGTH_SHORT)
-                        .show();
-                getBackgroundHandler().post(new Runnable() {
-                    @Override
-                    public void run() {
-                        File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-                                "picture.jpg");
-                        OutputStream os = null;
-                        try {
-                            os = new FileOutputStream(file);
-                            os.write(data);
-                            os.close();
-                        } catch (IOException e) {
-                            Log.w(TAG, "Cannot write to " + file, e);
-                        } finally {
-                            if (os != null) {
-                                try {
-                                    os.close();
-                                } catch (IOException e) {
-                                    // Ignore
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+//                getBackgroundHandler().post(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        File file = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+//                                "picture.jpg");
+//                        OutputStream os = null;
+//                        try {
+//                            os = new FileOutputStream(file);
+//                            os.write(data);
+//                            os.close();
+//                        } catch (IOException e) {
+//                            Log.w(TAG, "Cannot write to " + file, e);
+//                        } finally {
+//                            if (os != null) {
+//                                try {
+//                                    os.close();
+//                                } catch (IOException e) {
+//                                    // Ignore
+//                                }
+//                            }
+//                        }
+//                    }
+//                });
+        }
+
+        @Override
+        public void onPreviewFrame(CameraView cameraView, ImageData imageData) {
+            Log.i(TAG, "onPreviewFrame: width:" + imageData.getWidth() + " height:" + imageData.getHeight() + " format:" + imageData.getFormat() + " time:" + (SystemClock.currentThreadTimeMillis() - mTakePreviewFrameStartTime));
+            long getNV21StartTime = SystemClock.currentThreadTimeMillis();
+            byte[] data = imageData.getNV21();
+            Log.i(TAG, "onPreviewFrame: getNV21 time:" + (SystemClock.currentThreadTimeMillis() - getNV21StartTime));
+
+            YuvImage yuv = new YuvImage(data, ImageFormat.NV21, imageData.getWidth(), imageData.getHeight(), null);
+            imageData.close();
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuv.compressToJpeg(new Rect(0, 0, yuv.getWidth(), yuv.getHeight()), 100, out);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size());
+
+//                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, null);
+            mPreviewFrameView.setImageBitmap(bitmap);
+            mPreviewFrameView.setVisibility(View.VISIBLE);
         }
     };
 

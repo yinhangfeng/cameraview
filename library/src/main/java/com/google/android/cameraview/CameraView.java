@@ -221,6 +221,7 @@ public class CameraView extends FrameLayout {
         state.ratio = getAspectRatio();
         state.autoFocus = getAutoFocus();
         state.flash = getFlash();
+        state.exceptAspectRatio = getExceptAspectRatio();
         return state;
     }
 
@@ -233,9 +234,14 @@ public class CameraView extends FrameLayout {
         SavedState ss = (SavedState) state;
         super.onRestoreInstanceState(ss.getSuperState());
         setFacing(ss.facing);
-        setAspectRatio(ss.ratio);
         setAutoFocus(ss.autoFocus);
         setFlash(ss.flash);
+        if (ss.exceptAspectRatio != null) {
+            setExceptAspectRatio(ss.exceptAspectRatio);
+        } else {
+            setAspectRatio(ss.ratio);
+        }
+
     }
 
     /**
@@ -407,8 +413,8 @@ public class CameraView extends FrameLayout {
         mImpl.takePicture();
     }
 
-    public void setExceptPictureSize(int longer, int shorter) {
-        mImpl.setExceptPictureSize(longer, shorter);
+    public void setExceptPictureConfig(Size size, int format) {
+        mImpl.setExceptPictureConfig(size, format);
     }
 
     public void takePreviewFrame() {
@@ -417,6 +423,10 @@ public class CameraView extends FrameLayout {
 
     public void setExceptAspectRatio(AspectRatio ratio) {
         mImpl.setExceptAspectRatio(ratio);
+    }
+
+    public AspectRatio getExceptAspectRatio() {
+        return mImpl.getExceptAspectRatio();
     }
 
     private class CallbackBridge implements CameraViewImpl.Callback {
@@ -455,9 +465,16 @@ public class CameraView extends FrameLayout {
         }
 
         @Override
-        public void onPictureTaken(byte[] data, Size size) {
+        public void onPictureTaken(ImageData imageData) {
             for (Callback callback : mCallbacks) {
-                callback.onPictureTaken(CameraView.this, data, size);
+                callback.onPictureTaken(CameraView.this, imageData);
+            }
+        }
+
+        @Override
+        public void onPreviewFrame(ImageData imageData) {
+            for (Callback callback : mCallbacks) {
+                callback.onPreviewFrame(CameraView.this, imageData);
             }
         }
 
@@ -478,6 +495,8 @@ public class CameraView extends FrameLayout {
         @Flash
         int flash;
 
+        AspectRatio exceptAspectRatio;
+
         @SuppressWarnings("WrongConstant")
         public SavedState(Parcel source, ClassLoader loader) {
             super(source);
@@ -485,6 +504,7 @@ public class CameraView extends FrameLayout {
             ratio = source.readParcelable(loader);
             autoFocus = source.readByte() != 0;
             flash = source.readInt();
+            exceptAspectRatio = source.readParcelable(loader);
         }
 
         public SavedState(Parcelable superState) {
@@ -498,6 +518,7 @@ public class CameraView extends FrameLayout {
             out.writeParcelable(ratio, 0);
             out.writeByte((byte) (autoFocus ? 1 : 0));
             out.writeInt(flash);
+            out.writeParcelable(exceptAspectRatio, 0);
         }
 
         public static final Parcelable.Creator<SavedState> CREATOR
@@ -548,8 +569,20 @@ public class CameraView extends FrameLayout {
         public void onPictureTaken(CameraView cameraView, byte[] data) {
         }
 
-        public void onPictureTaken(CameraView cameraView, byte[] data, Size size) {
+        public void onPictureTaken(CameraView cameraView, byte[] data, Size size, int format) {
             onPictureTaken(cameraView, data);
+        }
+
+        public void onPictureTaken(CameraView cameraView, ImageData imageData) {
+            byte[] data = imageData.getJPEG();
+            Size size = new Size(imageData.getWidth(), imageData.getHeight());
+            int format = imageData.getFormat();
+            imageData.close();
+            onPictureTaken(cameraView, data, size, format);
+        }
+
+        public void onPreviewFrame(CameraView cameraView, ImageData imageData) {
+
         }
     }
 

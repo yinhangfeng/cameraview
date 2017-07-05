@@ -17,6 +17,7 @@
 package com.google.android.cameraview;
 
 import android.annotation.SuppressLint;
+import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Build;
@@ -238,18 +239,19 @@ class Camera1 extends CameraViewImpl {
     }
 
     @Override
-    void setExceptPictureSize(int longer, int shorter) {
+    void setExceptPictureConfig(Size size, int format) {
 
     }
 
     @Override
     void takePreviewFrame() {
-        // TODO isPictureCaptureInProgress ?
+        isPictureCaptureInProgress.getAndSet(true);
         mCamera.setOneShotPreviewCallback(new Camera.PreviewCallback() {
             @Override
             public void onPreviewFrame(byte[] data, Camera camera) {
+                isPictureCaptureInProgress.set(false);
                 Camera.Size size = mCameraParameters.getPreviewSize();
-                mCallback.onPictureTaken(data, new Size(size.width, size.height));
+                mCallback.onPreviewFrame(new ImageData(data, size.width, size.height, ImageFormat.NV21));
             }
         });
     }
@@ -263,7 +265,12 @@ class Camera1 extends CameraViewImpl {
         if (!isCameraOpened()) {
             return;
         }
-        setAspectRatio(chooseOptimalAspectRatio(ratio));
+        setAspectRatio(chooseOptimalAspectRatio(ratio, mPreviewSizes));
+    }
+
+    @Override
+    AspectRatio getExceptAspectRatio() {
+        return mExceptAspectRatio;
     }
 
     void takePictureInternal() {
@@ -272,8 +279,8 @@ class Camera1 extends CameraViewImpl {
                 @Override
                 public void onPictureTaken(byte[] data, Camera camera) {
                     isPictureCaptureInProgress.set(false);
-                    Camera.Size size = mCameraParameters.getPreviewSize();
-                    mCallback.onPictureTaken(data, new Size(size.width, size.height));
+                    Camera.Size size = mCameraParameters.getPictureSize();
+                    mCallback.onPictureTaken(new ImageData(data, size.width, size.height, ImageFormat.JPEG));
                     camera.cancelAutoFocus();
                     camera.startPreview();
                 }
@@ -333,7 +340,7 @@ class Camera1 extends CameraViewImpl {
         }
         // AspectRatio
         if (mExceptAspectRatio != null) {
-            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio);
+            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio, mPreviewSizes);
         }
         if (mAspectRatio == null) {
             mAspectRatio = Constants.DEFAULT_ASPECT_RATIO;

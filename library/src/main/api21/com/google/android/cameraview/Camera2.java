@@ -24,6 +24,7 @@ import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
@@ -39,6 +40,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressWarnings("MissingPermission")
 @TargetApi(21)
@@ -156,13 +158,13 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onImageAvailable(ImageReader reader) {
-            try (Image image = reader.acquireNextImage()) {
-                Image.Plane[] planes = image.getPlanes();
-                if (planes.length > 0) {
-                    ByteBuffer buffer = planes[0].getBuffer();
-                    byte[] data = new byte[buffer.remaining()];
-                    buffer.get(data);
-                    mCallback.onPictureTaken(data, new Size(image.getWidth(), image.getHeight()));
+            Image image = reader.acquireNextImage();
+            if (image != null) {
+                ImageData imageData = new ImageData(image);
+                if (isTakeFrameInProgress.getAndSet(false)) {
+                    mCallback.onPreviewFrame(imageData);
+                } else {
+                    mCallback.onPictureTaken(imageData);
                 }
             }
         }
@@ -199,7 +201,9 @@ class Camera2 extends CameraViewImpl {
 
     private boolean mStarted;
 
-    private Size exceptPictureSize;
+    private Size mExceptPictureSize;
+    private int mExceptPictureFormat = ImageFormat.UNKNOWN;
+    private final AtomicBoolean isTakeFrameInProgress = new AtomicBoolean(false);
 
     Camera2(Callback callback, PreviewImpl preview, Context context) {
         super(callback, preview);
@@ -351,12 +355,12 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    void setExceptPictureSize(int longer, int shorter) {
-        Size size = new Size(longer, shorter);
-        if (size.equals(exceptPictureSize)) {
+    void setExceptPictureConfig(Size size, int format) {
+        if (size.equals(mExceptPictureSize) && mExceptPictureFormat == format) {
             return;
         }
-        exceptPictureSize = size;
+        mExceptPictureSize = size;
+        mExceptPictureFormat = format;
         if (mImageReader != null) {
             prepareImageReader();
         }
@@ -369,8 +373,9 @@ class Camera2 extends CameraViewImpl {
 
     @Override
     void takePreviewFrame() {
-//        captureStillPicture();
-
+        if (isTakeFrameInProgress.getAndSet(true)) {
+            return;
+        }
         try {
             CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(
                     CameraDevice.TEMPLATE_PREVIEW);
@@ -387,9 +392,17 @@ class Camera2 extends CameraViewImpl {
 //                            mDisplayOrientation * (mFacing == Constants.FACING_FRONT ? 1 : -1) +
 //                            360) % 360);
 
-            mCaptureSession.capture(captureRequestBuilder.build(), null, null);
+            mCaptureSession.capture(captureRequestBuilder.build(),
+                    new CameraCaptureSession.CaptureCallback() {
+                        @Override
+                        public void onCaptureFailed(@NonNull CameraCaptureSession session,
+                                @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+                            isTakeFrameInProgress.set(false);
+                        }
+                    }, null);
         } catch (CameraAccessException e) {
             e.printStackTrace();
+            isTakeFrameInProgress.set(false);
         }
 
     }
@@ -403,7 +416,12 @@ class Camera2 extends CameraViewImpl {
         if (!mStarted) {
             return;
         }
-        setAspectRatio(chooseOptimalAspectRatio(ratio));
+        setAspectRatio(chooseOptimalAspectRatio(ratio, mPreviewSizes));
+    }
+
+    @Override
+    AspectRatio getExceptAspectRatio() {
+        return mExceptAspectRatio;
     }
 
     @Override
@@ -498,7 +516,7 @@ class Camera2 extends CameraViewImpl {
         }
 
         if (mExceptAspectRatio != null) {
-            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio);
+            mAspectRatio = chooseOptimalAspectRatio(mExceptAspectRatio, mPreviewSizes);
         }
         if (!mPreviewSizes.ratios().contains(mAspectRatio)) {
             mAspectRatio = mPreviewSizes.ratios().iterator().next();
@@ -516,13 +534,13 @@ class Camera2 extends CameraViewImpl {
             mImageReader.close();
         }
         Size size;
-        if (exceptPictureSize != null) {
-            size = chooseOptimalSizeInner(exceptPictureSize.getWidth(), exceptPictureSize.getHeight());
+        if (mExceptPictureSize != null) {
+            size = chooseOptimalSizeInner(mExceptPictureSize.getWidth(), mExceptPictureSize.getHeight());
         } else {
             size = mPictureSizes.sizes(mAspectRatio).last();
         }
         mImageReader = ImageReader.newInstance(size.getWidth(), size.getHeight(),
-                ImageFormat.JPEG, /* maxImages */ 2);
+                mExceptPictureFormat == ImageFormat.UNKNOWN ? ImageFormat.JPEG : mExceptPictureFormat, /* maxImages */ 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
     }
 
