@@ -17,6 +17,7 @@
 package com.google.android.cameraview;
 
 import android.content.res.Resources;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
 
@@ -72,6 +73,8 @@ abstract class CameraViewImpl {
     abstract void setExceptPictureConfig(Size size, int format);
 
     abstract void takePreviewFrame();
+
+    abstract void setOneShotPreviewCallback(PreviewCallback callback, Looper looper);
 
     /**
      * 优先级高于setAspectRatio
@@ -144,6 +147,7 @@ abstract class CameraViewImpl {
 
         void onPreviewFrame(ImageData imageData);
 
-    }
+        void onError(Throwable error, String desc);
 
+    }
 }

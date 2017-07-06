@@ -77,6 +77,10 @@ abstract class DisplayOrientationDetector {
         mDisplay = null;
     }
 
+    public void immediatelyDispatchOrientationChanged(Display display) {
+        dispatchOnDisplayOrientationChanged(DISPLAY_ORIENTATIONS.get(display.getRotation()));
+    }
+
     public int getLastKnownDisplayOrientation() {
         return mLastKnownDisplayOrientation;
     }

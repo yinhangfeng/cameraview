@@ -31,6 +31,7 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.SparseIntArray;
@@ -408,6 +409,11 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
+    void setOneShotPreviewCallback(PreviewCallback callback, Looper looper) {
+
+    }
+
+    @Override
     void setExceptAspectRatio(AspectRatio ratio) {
         if (ratio != null && ratio.equals(this.mExceptAspectRatio)) {
             return;
@@ -426,8 +432,10 @@ class Camera2 extends CameraViewImpl {
 
     @Override
     void setDisplayOrientation(int displayOrientation) {
-        mDisplayOrientation = displayOrientation;
-        mPreview.setDisplayOrientation(mDisplayOrientation);
+        if (mDisplayOrientation != displayOrientation) {
+            mDisplayOrientation = displayOrientation;
+            mPreview.setDisplayOrientation(mDisplayOrientation);
+        }
     }
 
     /**

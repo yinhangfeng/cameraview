@@ -19,7 +19,9 @@ package com.google.android.cameraview;
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.hardware.display.DisplayManager;
 import android.os.Build;
+import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.IntDef;
@@ -29,6 +31,7 @@ import android.support.v4.os.ParcelableCompat;
 import android.support.v4.os.ParcelableCompatCreatorCallbacks;
 import android.support.v4.view.ViewCompat;
 import android.util.AttributeSet;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 import java.lang.annotation.Retention;
@@ -254,6 +257,7 @@ public class CameraView extends FrameLayout {
      * {@link Activity#onResume()}.
      */
     public void start() {
+        mDisplayOrientationDetector.immediatelyDispatchOrientationChanged(((WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay());
         if (!mImpl.start()) {
             //store the state ,and restore this state after fall back o Camera1
             Parcelable state=onSaveInstanceState();
@@ -426,6 +430,10 @@ public class CameraView extends FrameLayout {
         mImpl.takePreviewFrame();
     }
 
+    public void setOneShotPreviewCallback(final PreviewCallback callback, Looper looper) {
+        mImpl.setOneShotPreviewCallback(callback, looper);
+    }
+
     public void setExceptAspectRatio(AspectRatio ratio) {
         mImpl.setExceptAspectRatio(ratio);
     }
@@ -480,6 +488,13 @@ public class CameraView extends FrameLayout {
         public void onPreviewFrame(ImageData imageData) {
             for (Callback callback : mCallbacks) {
                 callback.onPreviewFrame(CameraView.this, imageData);
+            }
+        }
+
+        @Override
+        public void onError(Throwable error, String desc) {
+            for (Callback callback : mCallbacks) {
+                callback.onError(error, desc);
             }
         }
 
@@ -587,6 +602,10 @@ public class CameraView extends FrameLayout {
         }
 
         public void onPreviewFrame(CameraView cameraView, ImageData imageData) {
+
+        }
+
+        public void onError(Throwable error, String desc) {
 
         }
     }

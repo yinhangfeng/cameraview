@@ -21,7 +21,11 @@ import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.support.v4.util.SparseArrayCompat;
+import android.util.Log;
 import android.view.SurfaceHolder;
 
 import java.io.IOException;
@@ -32,7 +36,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @SuppressWarnings("deprecation")
-class Camera1 extends CameraViewImpl {
+class Camera1 extends CameraViewImpl implements PreviewImpl.Callback {
+    private static final String TAG = "Camera1";
 
     private static final int INVALID_CAMERA_ID = -1;
 
@@ -73,17 +78,26 @@ class Camera1 extends CameraViewImpl {
 
     private int mDisplayOrientation;
 
+    private PreviewCallback mPreviewCallback;
+    private PreviewHandler mPreviewHandler;
+    private final Camera.PreviewCallback mCameraPreviewCallback = new Camera.PreviewCallback() {
+        @Override
+        public void onPreviewFrame(byte[] data, Camera camera) {
+            Log.i(TAG, "onPreviewFrame: " + Thread.currentThread().getId());
+            PreviewHandler handler;
+            synchronized (mCameraPreviewCallback) {
+                handler = mPreviewHandler;
+            }
+            if (handler != null) {
+                Camera.Size size = mCameraParameters.getPreviewSize();
+                handler.sendMessage(handler.obtainMessage(0, new ImageData(data, size.width, size.height, mCameraParameters.getPreviewFormat())));
+            }
+        }
+    };
+
     Camera1(Callback callback, PreviewImpl preview) {
         super(callback, preview);
-        preview.setCallback(new PreviewImpl.Callback() {
-            @Override
-            public void onSurfaceChanged() {
-                if (mCamera != null) {
-                    setUpPreview();
-                    adjustCameraParameters();
-                }
-            }
-        });
+        preview.setCallback(this);
     }
 
     @Override
@@ -112,19 +126,21 @@ class Camera1 extends CameraViewImpl {
     void setUpPreview() {
         try {
             if (mPreview.getOutputClass() == SurfaceHolder.class) {
-                final boolean needsToStopPreview = mShowingPreview && Build.VERSION.SDK_INT < 14;
-                if (needsToStopPreview) {
-                    mCamera.stopPreview();
-                }
+//                final boolean needsToStopPreview = mShowingPreview && Build.VERSION.SDK_INT < 14;
+//                if (needsToStopPreview) {
+//                    mCamera.stopPreview();
+//                }
                 mCamera.setPreviewDisplay(mPreview.getSurfaceHolder());
-                if (needsToStopPreview) {
-                    mCamera.startPreview();
-                }
+//                if (needsToStopPreview) {
+//                    mCamera.startPreview();
+//                }
             } else {
                 mCamera.setPreviewTexture((SurfaceTexture) mPreview.getSurfaceTexture());
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+//            throw new RuntimeException(e);
+//            Log.e(TAG, "setUpPreview error", e);
+            mCallback.onError(e, "setUpPreview");
         }
     }
 
@@ -245,15 +261,40 @@ class Camera1 extends CameraViewImpl {
 
     @Override
     void takePreviewFrame() {
-        isPictureCaptureInProgress.getAndSet(true);
         mCamera.setOneShotPreviewCallback(new Camera.PreviewCallback() {
             @Override
             public void onPreviewFrame(byte[] data, Camera camera) {
-                isPictureCaptureInProgress.set(false);
                 Camera.Size size = mCameraParameters.getPreviewSize();
                 mCallback.onPreviewFrame(new ImageData(data, size.width, size.height, ImageFormat.NV21));
             }
         });
+    }
+
+    @Override
+    public void onSurfaceChanged() {
+        if (mCamera != null) {
+            setUpPreview();
+            adjustCameraParameters();
+        }
+    }
+
+    @Override
+    void setOneShotPreviewCallback(final PreviewCallback callback, Looper looper) {
+        synchronized (mCameraPreviewCallback) {
+            mPreviewCallback = callback;
+            if (callback != null) {
+                if (looper == null) {
+                    looper = Looper.getMainLooper();
+                }
+                if (mPreviewHandler == null || mPreviewHandler.getLooper() != looper) {
+                    mPreviewHandler = new PreviewHandler(looper);
+                }
+                mCamera.setOneShotPreviewCallback(mCameraPreviewCallback);
+            } else {
+                mCamera.setOneShotPreviewCallback(null);
+                mPreviewHandler = null;
+            }
+        }
     }
 
     @Override
@@ -362,29 +403,33 @@ class Camera1 extends CameraViewImpl {
         return r;
     }
 
-    void adjustCameraParameters() {
+    private void adjustCameraParameters() {
         SortedSet<Size> sizes = mPreviewSizes.sizes(mAspectRatio);
         if (sizes == null) { // Not supported
             mAspectRatio = chooseAspectRatio();
             sizes = mPreviewSizes.sizes(mAspectRatio);
         }
-        Size size = chooseOptimalSize(sizes);
 
         // Always re-apply camera parameters
         // Largest picture size in this ratio
         final Size pictureSize = mPictureSizes.sizes(mAspectRatio).last();
-        if (mShowingPreview) {
-            mCamera.stopPreview();
+        // XXX 感觉不需要停止preview
+//        if (mShowingPreview) {
+//            mCamera.stopPreview();
+//        }
+        if (mPreview.isReady()) {
+            Size size = chooseOptimalSize(sizes);
+//            Log.i(TAG, "setPreviewSize: " + size);
+            mCameraParameters.setPreviewSize(size.getWidth(), size.getHeight());
         }
-        mCameraParameters.setPreviewSize(size.getWidth(), size.getHeight());
         mCameraParameters.setPictureSize(pictureSize.getWidth(), pictureSize.getHeight());
         mCameraParameters.setRotation(calcCameraRotation(mDisplayOrientation));
         setAutoFocusInternal(mAutoFocus);
         setFlashInternal(mFlash);
         mCamera.setParameters(mCameraParameters);
-        if (mShowingPreview) {
-            mCamera.startPreview();
-        }
+//        if (mShowingPreview) {
+//            mCamera.startPreview();
+//        }
     }
 
     @SuppressWarnings("SuspiciousNameCombination")
@@ -492,6 +537,7 @@ class Camera1 extends CameraViewImpl {
         } else {
             return false;
         }
+        // TODO 对不支持的设备使用定期mCamera.autoFocus();
     }
 
     /**
@@ -519,4 +565,20 @@ class Camera1 extends CameraViewImpl {
         }
     }
 
+    private class PreviewHandler extends Handler {
+        PreviewHandler(Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            PreviewCallback callback;
+            synchronized (mCameraPreviewCallback) {
+                callback = mPreviewCallback;
+            }
+            if (callback != null) {
+                callback.onPreviewFrame((ImageData) msg.obj);
+            }
+        }
+    }
 }
